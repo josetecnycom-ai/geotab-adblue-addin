@@ -57,38 +57,54 @@ geotab.addin.adBlueReport = (api, state) => {
         /**
          * renderCards crea el HTML dinámico para los 30 vehículos.
          */
-        renderCards(devices, statusDataList) {
-            const container = document.getElementById("vehicleGrid");
-            container.innerHTML = ""; // Limpiar cargando
+      // ... dentro de tu objeto adBlueReport ...
 
-            devices.forEach(device => {
-                // Buscamos el último dato de AdBlue para este vehículo específico
-                const latestData = statusDataList
-                    .filter(data => data.device.id === device.id)
-                    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0];
+renderCards(devices, statusDataList) {
+    const container = document.getElementById("vehicleGrid");
+    container.innerHTML = ""; 
 
-                const level = latestData ? Math.round(latestData.data) : null;
-                const statusClass = this.getStatusClass(level);
-                
-                const card = document.createElement("div");
-                card.className = `vehicle-card ${statusClass}`;
-                
-                card.innerHTML = `
-                    <span class="vehicle-name">${device.name}</span>
-                    <div class="level-container">
-                        <div class="progress-bar-bg">
-                            <div class="progress-fill" style="width: ${level ?? 0}%; background-color: ${this.getColor(statusClass)}"></div>
-                        </div>
-                        <div class="status-text">
-                            <span>${level !== null ? level + '%' : 'Sin datos'}</span>
-                            <span>AdBlue</span>
-                        </div>
-                    </div>
-                    <small>Matrícula: ${device.licensePlate || 'N/A'}</small>
-                `;
-                container.appendChild(card);
-            });
-        },
+    devices.forEach(device => {
+        // Buscamos el último dato
+        const latest = statusDataList
+            .filter(d => d.device.id === device.id)
+            .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0];
+
+        // Verificamos si existe el dato
+        const hasData = latest !== undefined && latest.data !== null;
+        const level = hasData ? Math.round(latest.data) : null;
+        
+        // Determinamos la clase visual
+        let statusClass = "no-data";
+        let barColor = "#bdc3c7";
+
+        if (hasData) {
+            if (level < 10) { statusClass = "critical"; barColor = "#e74c3c"; }
+            else if (level < 20) { statusClass = "warning"; barColor = "#f39c12"; }
+            else { statusClass = "ok"; barColor = "#27ae60"; }
+        }
+
+        const card = document.createElement("div");
+        card.className = `vehicle-card ${statusClass}`;
+        
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <span class="vehicle-name"><strong>${device.name}</strong></span>
+                ${!hasData ? '<span class="no-data-badge">Sin Sensor</span>' : ''}
+            </div>
+            
+            <div class="level-container" style="margin-top: 10px;">
+                <div class="progress-bar-bg" style="background: #eee; height: 10px; border-radius: 5px; overflow: hidden;">
+                    <div class="progress-fill" style="width: ${level || 0}%; background: ${barColor}; height: 100%; transition: width 0.5s;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-top: 5px;">
+                    <span>${hasData ? level + '%' : 'Nivel desconocido'}</span>
+                    <small style="color: #95a5a6;">${device.licensePlate || 'Sin placa'}</small>
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+},
 
         /**
          * Lógica de colores según el nivel
@@ -117,3 +133,4 @@ geotab.addin.adBlueReport = (api, state) => {
     };
 
 };
+
