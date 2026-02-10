@@ -1,9 +1,9 @@
 {
   "name": "Reporte de AdBlue",
-  "supportEmail": "soporte@tuempresa.com",
+  "supportEmail": "soporte@tecnoflotas.com",
   "version": "1.0.0",
   "items": [{
-    "url": "index.html",
+    "url": "https://josetecnycom-ai.github.io/geotab-adblue-addin/",
     "path": "ActivityFeedback/",
     "menuName": {
       "en": "AdBlue Report",
@@ -11,4 +11,5 @@
     },
     "icon": "images/icon.svg"
   }]
+
 }
