@@ -1,136 +1,197 @@
-/**
- * Add-In de Monitoreo de AdBlue para Geotab
- */
 geotab.addin.adBlueReport = (api, state) => {
     
-    // ID estándar de Geotab para el nivel de AdBlue (DEF)
+    // Configuración
     const DIAGNOSTIC_ADBLUE_ID = "DiagnosticDieselExhaustFluidId";
+    
+    // Variables globales para almacenamiento temporal
+    let allDevices = [];
+    let allStatusData = [];
 
     return {
         /**
-         * initialize se ejecuta una sola vez cuando se carga el Add-In.
+         * Inicialización del Add-In
          */
         initialize(api, state, callback) {
-            console.log("Add-In de AdBlue inicializado.");
-            // Dibujamos el estado inicial
+            console.log("Iniciando Add-In de AdBlue...");
+            
+            // 1. Cargar datos iniciales
             this.updateReport(api);
             
-            // Configurar el botón de actualización
+            // 2. Configurar eventos de botones y buscador
             document.getElementById("refreshBtn").addEventListener("click", () => {
                 this.updateReport(api);
+            });
+
+            document.getElementById("exportBtn").addEventListener("click", () => {
+                this.downloadCSV();
+            });
+
+            document.getElementById("searchInput").addEventListener("input", (e) => {
+                this.filterAndRender(e.target.value.toLowerCase());
             });
 
             callback();
         },
 
         /**
-         * updateReport obtiene los datos y actualiza el DOM.
+         * Obtener datos de la API de Geotab
          */
         async updateReport(api) {
             const container = document.getElementById("vehicleGrid");
             container.innerHTML = '<div class="loading-shimmer">Consultando niveles de flota...</div>';
 
             try {
-                // Usamos multiCall para pedir Vehículos y sus niveles de AdBlue en un solo viaje
+                // Llamada optimizada (Multicall)
                 const results = await api.multiCall([
                     ["Get", { typeName: "Device" }],
                     ["Get", { 
                         typeName: "StatusData", 
-                        search: { 
-                            diagnosticSearch: { id: DIAGNOSTIC_ADBLUE_ID }
-                        } 
+                        search: { diagnosticSearch: { id: DIAGNOSTIC_ADBLUE_ID } } 
                     }]
                 ]);
 
-                const devices = results[0];
-                const statusDataList = results[1];
+                allDevices = results[0];
+                allStatusData = results[1];
 
-                this.renderCards(devices, statusDataList);
-                this.updateSummary(statusDataList);
+                // Renderizar todo inicialmente
+                this.renderCards(allDevices, allStatusData);
+                this.updateSummary(allStatusData);
 
             } catch (error) {
-                console.error("Error obteniendo datos de Geotab:", error);
-                container.innerHTML = `<p class="error">Error al cargar datos: ${error.message}</p>`;
+                console.error("Error Geotab:", error);
+                container.innerHTML = `<p style="color:red; text-align:center;">Error al cargar datos: ${error.message}</p>`;
             }
         },
 
         /**
-         * renderCards crea el HTML dinámico para los 30 vehículos.
+         * Filtrar vehículos en memoria (Buscador)
          */
-      // ... dentro de tu objeto adBlueReport ...
+        filterAndRender(term) {
+            if (!allDevices.length) return;
 
-renderCards(devices, statusDataList) {
-    const container = document.getElementById("vehicleGrid");
-    container.innerHTML = ""; 
+            const filtered = allDevices.filter(device => {
+                const name = (device.name || "").toLowerCase();
+                const plate = (device.licensePlate || "").toLowerCase();
+                return name.includes(term) || plate.includes(term);
+            });
 
-    devices.forEach(device => {
-        // Buscamos el último dato
-        const latest = statusDataList
-            .filter(d => d.device.id === device.id)
-            .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0];
-
-        // Verificamos si existe el dato
-        const hasData = latest !== undefined && latest.data !== null;
-        const level = hasData ? Math.round(latest.data) : null;
-        
-        // Determinamos la clase visual
-        let statusClass = "no-data";
-        let barColor = "#bdc3c7";
-
-        if (hasData) {
-            if (level < 10) { statusClass = "critical"; barColor = "#e74c3c"; }
-            else if (level < 20) { statusClass = "warning"; barColor = "#f39c12"; }
-            else { statusClass = "ok"; barColor = "#27ae60"; }
-        }
-
-        const card = document.createElement("div");
-        card.className = `vehicle-card ${statusClass}`;
-        
-        card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: start;">
-                <span class="vehicle-name"><strong>${device.name}</strong></span>
-                ${!hasData ? '<span class="no-data-badge">Sin Sensor</span>' : ''}
-            </div>
-            
-            <div class="level-container" style="margin-top: 10px;">
-                <div class="progress-bar-bg" style="background: #eee; height: 10px; border-radius: 5px; overflow: hidden;">
-                    <div class="progress-fill" style="width: ${level || 0}%; background: ${barColor}; height: 100%; transition: width 0.5s;"></div>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-top: 5px;">
-                    <span>${hasData ? level + '%' : 'Nivel desconocido'}</span>
-                    <small style="color: #95a5a6;">${device.licensePlate || 'Sin placa'}</small>
-                </div>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-},
+            this.renderCards(filtered, allStatusData);
+        },
 
         /**
-         * Lógica de colores según el nivel
+         * Generar el HTML de las tarjetas
          */
-        getStatusClass(level) {
-            if (level === null) return "ok";
-            if (level < 10) return "critical";
-            if (level < 20) return "warning";
-            return "ok";
+        renderCards(devices, statusDataList) {
+            const container = document.getElementById("vehicleGrid");
+            container.innerHTML = "";
+
+            if (devices.length === 0) {
+                container.innerHTML = '<p style="text-align:center; width:100%; color:#999;">No se encontraron vehículos.</p>';
+                return;
+            }
+
+            devices.forEach(device => {
+                // Buscar el último dato para este vehículo
+                const latest = statusDataList
+                    .filter(d => d.device.id === device.id)
+                    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0];
+
+                const hasData = latest && latest.data !== null;
+                const level = hasData ? Math.round(latest.data) : null;
+                
+                // Determinar colores
+                let statusClass = "no-data";
+                let barColor = "#bdc3c7";
+
+                if (hasData) {
+                    if (level < 10) { statusClass = "critical"; barColor = "#e74c3c"; }
+                    else if (level < 20) { statusClass = "warning"; barColor = "#f39c12"; }
+                    else { statusClass = "ok"; barColor = "#27ae60"; }
+                }
+
+                // Crear elemento HTML
+                const card = document.createElement("div");
+                card.className = `vehicle-card ${statusClass}`;
+                
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <span class="vehicle-name"><strong>${device.name}</strong></span>
+                        ${!hasData ? '<span class="no-data-badge">Sin Sensor</span>' : ''}
+                    </div>
+                    
+                    <div class="level-container" style="margin-top: 10px;">
+                        <div class="progress-bar-bg" style="background: #eee; height: 10px; border-radius: 5px; overflow: hidden;">
+                            <div class="progress-fill" style="width: ${level || 0}%; background: ${barColor}; height: 100%;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-top: 5px; color: #555;">
+                            <span>${hasData ? level + '%' : '--'}</span>
+                            <small>${device.licensePlate || ''}</small>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
         },
 
-        getColor(status) {
-            if (status === "critical") return "#e74c3c";
-            if (status === "warning") return "#f39c12";
-            return "#27ae60";
-        },
-
+        /**
+         * Actualizar contadores superiores
+         */
         updateSummary(statusData) {
             const levels = statusData.map(d => d.data);
-            const criticalCount = levels.filter(l => l < 10).length;
+            const critical = levels.filter(l => l < 10).length;
             const avg = levels.length ? (levels.reduce((a, b) => a + b, 0) / levels.length).toFixed(1) : 0;
 
-            document.getElementById("count-critical").innerText = criticalCount;
-            document.getElementById("avg-level").innerText = avg + "%";
+            const elCrit = document.getElementById("count-critical");
+            const elAvg = document.getElementById("avg-level");
+            
+            if(elCrit) elCrit.innerText = critical;
+            if(elAvg) elAvg.innerText = avg + "%";
+        },
+
+        /**
+         * Exportar a Excel (CSV)
+         */
+        downloadCSV() {
+            if (!allDevices || allDevices.length === 0) {
+                alert("Espera a que carguen los datos.");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            // Cabeceras
+            csvContent += "Vehiculo,Matricula,Nivel AdBlue (%),Estado,Fecha Lectura\n";
+
+            allDevices.forEach(device => {
+                const latest = allStatusData
+                    .filter(d => d.device.id === device.id)
+                    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0];
+
+                const level = latest ? Math.round(latest.data) : "";
+                const dateRaw = latest ? new Date(latest.dateTime) : null;
+                const dateStr = dateRaw ? dateRaw.toLocaleDateString() + " " + dateRaw.toLocaleTimeString() : "Sin datos";
+                
+                let statusText = "Sin datos";
+                if (level !== "") {
+                    if (level < 10) statusText = "CRITICO";
+                    else if (level < 20) statusText = "BAJO";
+                    else statusText = "OK";
+                }
+
+                // Construir fila CSV
+                const row = `"${device.name}","${device.licensePlate || ''}","${level}","${statusText}","${dateStr}"`;
+                csvContent += row + "\n";
+            });
+
+            // Descarga
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Reporte_AdBlue_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
     };
-
 };
+
 
