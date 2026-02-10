@@ -8,19 +8,24 @@
 </head>
 <body>
     <div id="adblue-addin-container">
-        <header class="addin-header">
-            <div class="title-section">
-                <h1>Monitoreo de AdBlue</h1>
-                <p>Estado en tiempo real de la flota ligera</p>
-            </div>
-            
-            <div class="actions">
-                <input type="text" id="searchInput" placeholder="Buscar vehículo..." autocomplete="off">
-                
-                <button id="refreshBtn" class="geotab-button">Actualizar</button>
-                <button id="exportBtn" class="geotab-button excel-btn">Descargar Excel</button>
-            </div>
-        </header>
+       <header class="addin-header">
+    <div class="title-section">
+        <h1>Reporte de AdBlue</h1>
+    </div>
+    
+    <div class="controls-row">
+        <div class="date-group">
+            <label>Desde: <input type="datetime-local" id="dateFrom"></label>
+            <label>Hasta: <input type="datetime-local" id="dateTo"></label>
+        </div>
+
+        <div class="actions">
+            <input type="text" id="searchInput" placeholder="Filtrar vehículo..." autocomplete="off">
+            <button id="refreshBtn" class="geotab-button">Consultar</button>
+            <button id="exportBtn" class="geotab-button excel-btn">Excel</button>
+        </div>
+    </div>
+</header>
 
         <section class="summary-stats">
             <div class="stat-card">
@@ -41,3 +46,4 @@
     <script src="main.js"></script>
 </body>
 </html>
+
