@@ -18,72 +18,107 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 25px;
+    flex-wrap: wrap; /* Para que se adapte en pantallas pequeñas */
+    gap: 15px;
 }
 
+.title-section h1 { margin: 0; font-size: 1.5em; color: #333; }
+.title-section p { margin: 5px 0 0; color: #666; font-size: 0.9em; }
+
+/* Controles y Botones */
+.actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.geotab-button {
+    padding: 10px 20px;
+    background-color: var(--geotab-blue);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.geotab-button:hover { opacity: 0.9; }
+
+.excel-btn {
+    background-color: #27ae60 !important; /* Verde Excel */
+}
+
+/* Buscador */
+#searchInput {
+    padding: 10px 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    min-width: 250px;
+}
+
+/* Resumen Stats */
+.summary-stats {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-card .value { font-size: 1.5em; font-weight: bold; color: var(--geotab-blue); }
+.stat-card .label { font-size: 0.85em; color: #7f8c8d; }
+
+/* Grid de Tarjetas */
 .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
 }
 
-/* Estilo de la Tarjeta de Vehículo */
 .vehicle-card {
     background: white;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 20px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    border-top: 5px solid #ddd;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    border-top: 4px solid #ddd;
     transition: transform 0.2s;
 }
 
-.vehicle-card:hover {
-    transform: translateY(-5px);
-}
+.vehicle-card:hover { transform: translateY(-3px); }
 
+/* Estados de colores */
 .vehicle-card.critical { border-top-color: var(--critical-red); }
 .vehicle-card.warning { border-top-color: var(--warning-orange); }
 .vehicle-card.ok { border-top-color: var(--safe-green); }
+.vehicle-card.no-data { border-top-color: #bdc3c7; opacity: 0.8; }
 
-.vehicle-name {
-    font-weight: bold;
-    font-size: 1.1em;
-    margin-bottom: 10px;
-    display: block;
+.vehicle-name { display: block; margin-bottom: 10px; color: #2c3e50; }
+
+.no-data-badge {
+    background: #ecf0f1;
+    color: #7f8c8d;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7em;
+    float: right;
 }
 
-/* Barra de Progreso de AdBlue */
-.level-container {
-    margin: 15px 0;
-}
-
-.progress-bar-bg {
-    background: #eee;
-    border-radius: 10px;
-    height: 12px;
-    width: 100%;
-    overflow: hidden;
-}
-
-.progress-fill {
-    height: 100%;
-    transition: width 0.5s ease-in-out;
-}
-
-.status-text {
-    font-size: 0.85em;
-    color: #666;
-    display: flex;
-    justify-content: space-between;
-    margin-top: 5px;
-
-}
-/* Efecto de carga animada */
+/* Animación de carga */
 .loading-shimmer {
     background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     padding: 20px;
     border-radius: 8px;
+    grid-column: 1 / -1; /* Ocupa todo el ancho */
     text-align: center;
     color: #888;
 }
@@ -91,18 +126,4 @@ body {
 @keyframes shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
-}
-
-/* Estilo para vehículos sin datos */
-.no-data {
-    border-left: 5px solid #bdc3c7 !important;
-    opacity: 0.7;
-}
-
-.no-data-badge {
-    background: #ecf0f1;
-    color: #7f8c8d;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.8em;
 }
