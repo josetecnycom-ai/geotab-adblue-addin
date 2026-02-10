@@ -75,4 +75,34 @@ body {
     display: flex;
     justify-content: space-between;
     margin-top: 5px;
+
+}
+/* Efecto de carga animada */
+.loading-shimmer {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    color: #888;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Estilo para vehículos sin datos */
+.no-data {
+    border-left: 5px solid #bdc3c7 !important;
+    opacity: 0.7;
+}
+
+.no-data-badge {
+    background: #ecf0f1;
+    color: #7f8c8d;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
 }
