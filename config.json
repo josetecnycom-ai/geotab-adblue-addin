@@ -1,5 +1,5 @@
 {
-  "name": "Reporte de AdBlue",
+  "name": "Reporte AdBlue",
   "supportEmail": "soporte@tecnoflotas.com",
   "version": "1.0.0",
   "items": [{
@@ -8,6 +8,6 @@
     "menuName": {
       "en": "AdBlue Report",
       "es": "Reporte AdBlue"
-    },
-   ]
+    }
+  }]
 }
