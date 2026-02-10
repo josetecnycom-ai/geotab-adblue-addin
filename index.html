@@ -3,47 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte AdBlue</title>
+    <title>Reporte AdBlue Avanzado</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="adblue-addin-container">
-       <header class="addin-header">
-    <div class="title-section">
-        <h1>Reporte de AdBlue</h1>
-    </div>
-    
-    <div class="controls-row">
-        <div class="date-group">
-            <label>Desde: <input type="datetime-local" id="dateFrom"></label>
-            <label>Hasta: <input type="datetime-local" id="dateTo"></label>
-        </div>
+        <header class="addin-header">
+            <div class="title-section">
+                <h1>Analítica de AdBlue</h1>
+                <p>Cálculo de consumo y rellenos por periodo</p>
+            </div>
+            
+            <div class="controls-row">
+                <div class="date-group">
+                    <label>Desde: <input type="datetime-local" id="dateFrom"></label>
+                    <label>Hasta: <input type="datetime-local" id="dateTo"></label>
+                </div>
 
-        <div class="actions">
-            <input type="text" id="searchInput" placeholder="Filtrar vehículo..." autocomplete="off">
-            <button id="refreshBtn" class="geotab-button">Consultar</button>
-            <button id="exportBtn" class="geotab-button excel-btn">Excel</button>
-        </div>
-    </div>
-</header>
+                <div class="actions">
+                    <input type="text" id="searchInput" placeholder="Buscar vehículo..." autocomplete="off">
+                    <button id="refreshBtn" class="geotab-button">Calcular</button>
+                    <button id="exportBtn" class="geotab-button excel-btn">Exportar CSV</button>
+                </div>
+            </div>
+        </header>
 
         <section class="summary-stats">
             <div class="stat-card">
-                <span class="label">Nivel Crítico (< 10%)</span>
+                <span class="label">Alertas Críticas</span>
                 <span class="value" id="count-critical">0</span>
             </div>
             <div class="stat-card">
-                <span class="label">Promedio Flota</span>
-                <span class="value" id="avg-level">0%</span>
+                <span class="label">Consumo Promedio</span>
+                <span class="value" id="avg-consumption">0%</span>
             </div>
         </section>
 
         <main id="vehicleGrid" class="card-grid">
-            <div class="loading-shimmer">Cargando datos de la flota...</div>
-        </main>
+            </main>
     </div>
-
     <script src="main.js"></script>
 </body>
 </html>
-
