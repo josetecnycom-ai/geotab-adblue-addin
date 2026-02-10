@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="adblue-addin-container">
+        <header class="addin-header">
+            <div class="title-section">
+                <h1>Monitoreo de AdBlue</h1>
+                <p>Estado en tiempo real de la flota ligera</p>
+            </div>
+            <div class="actions">
+                <input type="text" id="vehicleSearch" placeholder="Buscar vehículo...">
+                <button id="refreshBtn" class="geotab-button">Actualizar Datos</button>
+            </div>
+        </header>
+
+        <section class="summary-stats">
+            <div class="stat-card">
+                <span class="label">Nivel Crítico (< 10%)</span>
+                <span class="value" id="count-critical">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="label">Promedio Flota</span>
+                <span class="value" id="avg-level">0%</span>
+            </div>
+        </section>
+
+        <main id="vehicleGrid" class="card-grid">
+            <div class="loading-shimmer">Cargando datos de la flota...</div>
+        </main>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+</html>

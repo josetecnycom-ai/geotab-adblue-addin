@@ -1,0 +1,78 @@
+:root {
+    --geotab-blue: #2440b2;
+    --critical-red: #e74c3c;
+    --warning-orange: #f39c12;
+    --safe-green: #27ae60;
+    --bg-gray: #f4f7f9;
+}
+
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-gray);
+    margin: 0;
+    padding: 20px;
+}
+
+.addin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+/* Estilo de la Tarjeta de Vehículo */
+.vehicle-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    border-top: 5px solid #ddd;
+    transition: transform 0.2s;
+}
+
+.vehicle-card:hover {
+    transform: translateY(-5px);
+}
+
+.vehicle-card.critical { border-top-color: var(--critical-red); }
+.vehicle-card.warning { border-top-color: var(--warning-orange); }
+.vehicle-card.ok { border-top-color: var(--safe-green); }
+
+.vehicle-name {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Barra de Progreso de AdBlue */
+.level-container {
+    margin: 15px 0;
+}
+
+.progress-bar-bg {
+    background: #eee;
+    border-radius: 10px;
+    height: 12px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    transition: width 0.5s ease-in-out;
+}
+
+.status-text {
+    font-size: 0.85em;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+}

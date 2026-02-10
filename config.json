@@ -1,0 +1,14 @@
+{
+  "name": "Reporte de AdBlue",
+  "supportEmail": "soporte@tuempresa.com",
+  "version": "1.0.0",
+  "items": [{
+    "url": "index.html",
+    "path": "ActivityFeedback/",
+    "menuName": {
+      "en": "AdBlue Report",
+      "es": "Reporte AdBlue"
+    },
+    "icon": "images/icon.svg"
+  }]
+}
