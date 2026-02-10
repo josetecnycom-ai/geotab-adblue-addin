@@ -4,7 +4,7 @@
 geotab.addin.adBlueReport = (api, state) => {
     
     // ID estándar de Geotab para el nivel de AdBlue (DEF)
-    const DIAGNOSTIC_ADBLUE_ID = "DiagnosticDieselExhaustFluidLevelId";
+    const DIAGNOSTIC_ADBLUE_ID = "DiagnosticDieselExhaustFluidId";
 
     return {
         /**
@@ -115,4 +115,5 @@ geotab.addin.adBlueReport = (api, state) => {
             document.getElementById("avg-level").innerText = avg + "%";
         }
     };
+
 };
