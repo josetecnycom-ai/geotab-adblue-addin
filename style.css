@@ -45,4 +45,14 @@ body { font-family: "Segoe UI", sans-serif; background-color: var(--bg-gray); ma
 .consumption-box { background: #f0f7ff; padding: 10px; border-radius: 6px; margin-top: 10px; border: 1px dashed #2440b2; }
 .fill-badge { background: #e8f5e9; color: #2e7d32; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; }
 
+/* --- NUEVO ESTILO PARA LA CAJA DE DATOS MANUALES --- */
+.manual-refill-box {
+    background: #e3f2fd; /* Azul muy clarito */
+    border-left: 4px solid #2196f3; /* Borde azul a la izquierda */
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-top: 10px;
+    margin-bottom: 5px;
+}
+
 .loading-shimmer { padding: 40px; text-align: center; color: #888; background: #eee; border-radius: 8px; grid-column: 1/-1; }
