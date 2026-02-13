@@ -23,7 +23,7 @@ geotab.addin.adBlueReport = (api, state) => {
 
         async updateReport(api) {
             const container = document.getElementById("vehicleGrid");
-            container.innerHTML = '<div class="loading-shimmer">Calculando consumos y leyendo registros manuales...</div>';
+            container.innerHTML = '<div class="loading-shimmer">Calculando consumos y sumando registros históricos...</div>';
 
             const fromDate = document.getElementById("dateFrom").value;
             const toDate = document.getElementById("dateTo").value;
@@ -51,42 +51,53 @@ geotab.addin.adBlueReport = (api, state) => {
         },
 
         processData() {
+            const fromLimit = new Date(document.getElementById("dateFrom").value);
+            const toLimit = new Date(document.getElementById("dateTo").value);
+
             calculatedResults = allDevices.map(device => {
-                // --- LÓGICA DE SENSORES (STATUS DATA) ---
+                // 1. Lógica de Sensores (StatusData)
                 const data = allStatusData
                     .filter(d => d.device.id === device.id)
                     .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
 
-                let totalConsumed = 0;
-                let refillsCount = 0;
+                let totalSensorConsumed = 0;
                 let lastLevel = null;
-
                 data.forEach(p => {
                     if (lastLevel !== null) {
                         const diff = lastLevel - p.data;
-                        if (diff > 0) {
-                            totalConsumed += diff;
-                        } else if (diff < -20) {
-                            refillsCount++;
-                        }
+                        if (diff > 0) totalSensorConsumed += diff;
                     }
                     lastLevel = p.data;
                 });
 
-                // --- NUEVA LÓGICA: EXTRAER DATOS MANUALES DEL COMENTARIO ---
-                let manualLiters = "N/A";
-                let manualDate = "";
-                
-                // Buscamos el patrón [FECHA -> NUMERO L] que creamos en el otro addin
-                // El comentario suele ser: "[13/02 10:00 -> 120L] | [Anterior...]"
+                // 2. LÓGICA DE SUMATORIA MANUAL (COMENTARIOS)
+                let sumaLitrosPeriodo = 0;
+                let conteoRegistros = 0;
+
                 if (device.comment) {
-                    // Regex explicada: Busca texto entre corchetes, luego "->", luego digitos, luego "L"
-                    const regex = /\[(.*?)\s*->\s*(\d+)\s*L\]/; 
-                    const match = device.comment.match(regex);
-                    
-                    if (match && match.length >= 3) {
-                        manualDate = match[1]; // La fecha capturada
-                        manualLiters = match[2]; // Los litros capturados
+                    // Buscamos todas las ocurrencias del patrón [FECHA -> LITROS L]
+                    // El formato es [DD/MM, HH:mm -> XX L]
+                    const regexGlobal = /\[(.*?)\s*->\s*(\d+)\s*L\]/g;
+                    let match;
+
+                    while ((match = regexGlobal.exec(device.comment)) !== null) {
+                        const fechaTexto = match[1]; // Ejemplo: "13/02, 10:00"
+                        const litros = parseInt(match[2]);
+
+                        // Convertir el texto "13/02" a un objeto Date real para comparar
+                        // Asumimos el año actual para la comparación
+                        const partes = fechaTexto.split(/[\/, ]+/); 
+                        const fechaRegistro = new Date();
+                        fechaRegistro.setMonth(parseInt(partes[1]) - 1);
+                        fechaRegistro.setDate(partes[0]);
+                        // Opcional: ajustar horas si están disponibles
+                        if(partes[2]) fechaRegistro.setHours(partes[2].split(':')[0]);
+
+                        // Verificar si está dentro del rango seleccionado
+                        if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
+                            sumaLitrosPeriodo += litros;
+                            conteoRegistros++;
+                        }
                     }
                 }
 
@@ -95,12 +106,11 @@ geotab.addin.adBlueReport = (api, state) => {
                     name: device.name,
                     plate: device.licensePlate || "N/A",
                     currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
-                    consumed: Math.round(totalConsumed * 10) / 10,
-                    refills: refillsCount,
+                    consumed: Math.round(totalSensorConsumed * 10) / 10,
                     hasData: data.length > 0,
-                    // Nuevos datos manuales
-                    lastRefillLiters: manualLiters,
-                    lastRefillDate: manualDate
+                    // Datos calculados del historial
+                    totalManualLiters: sumaLitrosPeriodo,
+                    numManualRecords: conteoRegistros
                 };
             });
         },
@@ -109,18 +119,12 @@ geotab.addin.adBlueReport = (api, state) => {
             const container = document.getElementById("vehicleGrid");
             container.innerHTML = "";
             let criticals = 0;
-            let sumConsumed = 0;
-            let countWithData = 0;
 
             devicesToRender.forEach(dev => {
                 const res = calculatedResults.find(r => r.id === dev.id);
                 if (!res) return;
 
                 if (res.currentLevel !== null && res.currentLevel < 10) criticals++;
-                if (res.hasData) {
-                    sumConsumed += res.consumed;
-                    countWithData++;
-                }
 
                 let status = "no-data";
                 if (res.currentLevel !== null) {
@@ -130,35 +134,31 @@ geotab.addin.adBlueReport = (api, state) => {
                 const card = document.createElement("div");
                 card.className = `vehicle-card ${status}`;
                 
-                // HTML DE LA TARJETA ACTUALIZADO
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between">
                         <strong>${res.name}</strong>
-                        ${res.refills > 0 ? `<span class="fill-badge">⛽ ${res.refills} Detec.</span>` : ''}
                     </div>
                     <p style="font-size:0.8em; color:#666; margin:5px 0;">Matrícula: ${res.plate}</p>
                     
                     <div style="margin:10px 0">
-                        <small>Nivel Sensor: ${res.currentLevel ?? '--'}%</small>
+                        <small>Nivel Actual: ${res.currentLevel ?? '--'}%</small>
                         <div style="background:#eee; height:8px; border-radius:4px">
                             <div style="width:${res.currentLevel || 0}%; background:${this.getBarColor(res.currentLevel)}; height:100%; border-radius:4px"></div>
                         </div>
                     </div>
 
-                    ${res.lastRefillLiters !== "N/A" ? `
-                    <div class="manual-refill-box">
-                        <div style="font-size: 0.75em; color: #004a99; font-weight:bold; margin-bottom:2px;">
-                            📝 Último Reporte Conductor
+                    <div class="manual-refill-box" style="border-left-color: ${res.totalManualLiters > 0 ? '#27ae60' : '#ccc'}">
+                        <div style="font-size: 0.75em; color: #333; font-weight:bold; margin-bottom:2px;">
+                            📋 Rellenos en este periodo
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:end;">
-                            <span style="font-size: 1.3em; font-weight:bold; color: #333;">${res.lastRefillLiters} L</span>
-                            <span style="font-size: 0.7em; color: #666;">${res.lastRefillDate}</span>
+                            <span style="font-size: 1.3em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} Litros</span>
+                            <span style="font-size: 0.7em; color: #666;">${res.numManualRecords} reportes</span>
                         </div>
                     </div>
-                    ` : ''}
 
                     <div class="consumption-box">
-                        <small>Consumo Sensor (Periodo):</small>
+                        <small>Consumo Sensor (Estimado %):</small>
                         <div style="font-size:1.2em; font-weight:bold; color:#2440b2;">
                             ${res.hasData ? res.consumed + '%' : 'Sin datos'}
                         </div>
@@ -168,7 +168,6 @@ geotab.addin.adBlueReport = (api, state) => {
             });
 
             document.getElementById("count-critical").innerText = criticals;
-            document.getElementById("avg-consumption").innerText = countWithData > 0 ? (sumConsumed/countWithData).toFixed(1) + "%" : "0%";
         },
 
         getBarColor(lvl) {
@@ -184,14 +183,13 @@ geotab.addin.adBlueReport = (api, state) => {
         },
 
         downloadCSV() {
-            // ACTUALIZADO PARA INCLUIR LA COLUMNA DE REPORTE MANUAL
-            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Nivel Actual (%),Consumo Calculado (%),Rellenos Detectados,Ultimo Reporte Manual (L),Fecha Reporte Manual\n";
+            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Nivel %,Consumo %,Total Litros Manual (Periodo),Num Reportes\n";
             calculatedResults.forEach(r => {
-                csv += `"${r.name}","${r.plate}","${r.currentLevel ?? ''}","${r.consumed}","${r.refills}","${r.lastRefillLiters}","${r.lastRefillDate}"\n`;
+                csv += `"${r.name}","${r.plate}","${r.currentLevel ?? ''}","${r.consumed}","${r.totalManualLiters}","${r.numManualRecords}"\n`;
             });
             const link = document.createElement("a");
             link.setAttribute("href", encodeURI(csv));
-            link.setAttribute("download", `AdBlue_Reporte_${new Date().toISOString().slice(0,10)}.csv`);
+            link.setAttribute("download", `AdBlue_Detalle.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
