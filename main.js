@@ -51,69 +51,64 @@ geotab.addin.adBlueReport = (api, state) => {
         },
 
         processData() {
-            const fromLimit = new Date(document.getElementById("dateFrom").value);
-            const toLimit = new Date(document.getElementById("dateTo").value);
+    const fromLimit = new Date(document.getElementById("dateFrom").value);
+    const toLimit = new Date(document.getElementById("dateTo").value);
 
-            calculatedResults = allDevices.map(device => {
-                // 1. Lógica de Sensores (StatusData)
-                const data = allStatusData
-                    .filter(d => d.device.id === device.id)
-                    .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+    calculatedResults = allDevices.map(device => {
+        // 1. Lógica de Sensores (se mantiene igual)
+        const data = allStatusData
+            .filter(d => d.device.id === device.id)
+            .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
 
-                let totalSensorConsumed = 0;
-                let lastLevel = null;
-                data.forEach(p => {
-                    if (lastLevel !== null) {
-                        const diff = lastLevel - p.data;
-                        if (diff > 0) totalSensorConsumed += diff;
-                    }
-                    lastLevel = p.data;
-                });
+        let totalSensorConsumed = 0;
+        let lastLevel = null;
+        data.forEach(p => {
+            if (lastLevel !== null) {
+                const diff = lastLevel - p.data;
+                if (diff > 0) totalSensorConsumed += diff;
+            }
+            lastLevel = p.data;
+        });
 
-                // 2. LÓGICA DE SUMATORIA MANUAL (COMENTARIOS)
-                let sumaLitrosPeriodo = 0;
-                let conteoRegistros = 0;
+        // 2. LÓGICA DE SUMATORIA CORREGIDA
+        let sumaLitrosPeriodo = 0;
+        let conteoRegistros = 0;
 
-                if (device.comment) {
-                    // Buscamos todas las ocurrencias del patrón [FECHA -> LITROS L]
-                    // El formato es [DD/MM, HH:mm -> XX L]
-                    const regexGlobal = /\[(.*?)\s*->\s*(\d+)\s*L\]/g;
-                    let match;
+        if (device.comment) {
+            // Regex mejorada: busca el patrón [DD/MM, HH:mm -> XX L]
+            // Ignora los separadores "|" y espacios extra
+            const regexGlobal = /\[(\d{1,2})\/(\d{1,2}),?\s*\d{1,2}:\d{1,2}\s*->\s*(\d+)\s*L\]/g;
+            let match;
 
-                    while ((match = regexGlobal.exec(device.comment)) !== null) {
-                        const fechaTexto = match[1]; // Ejemplo: "13/02, 10:00"
-                        const litros = parseInt(match[2]);
+            while ((match = regexGlobal.exec(device.comment)) !== null) {
+                const dia = parseInt(match[1]);
+                const mes = parseInt(match[2]) - 1; // Enero es 0
+                const litros = parseInt(match[3]);
 
-                        // Convertir el texto "13/02" a un objeto Date real para comparar
-                        // Asumimos el año actual para la comparación
-                        const partes = fechaTexto.split(/[\/, ]+/); 
-                        const fechaRegistro = new Date();
-                        fechaRegistro.setMonth(parseInt(partes[1]) - 1);
-                        fechaRegistro.setDate(partes[0]);
-                        // Opcional: ajustar horas si están disponibles
-                        if(partes[2]) fechaRegistro.setHours(partes[2].split(':')[0]);
+                // Creamos fecha del registro usando el año del filtro "Hasta" 
+                // para evitar errores de cambio de año
+                const fechaRegistro = new Date(toLimit.getFullYear(), mes, dia);
 
-                        // Verificar si está dentro del rango seleccionado
-                        if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
-                            sumaLitrosPeriodo += litros;
-                            conteoRegistros++;
-                        }
-                    }
+                // Si la fecha del registro es válida y entra en el rango
+                if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
+                    sumaLitrosPeriodo += litros;
+                    conteoRegistros++;
                 }
+            }
+        }
 
-                return {
-                    id: device.id,
-                    name: device.name,
-                    plate: device.licensePlate || "N/A",
-                    currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
-                    consumed: Math.round(totalSensorConsumed * 10) / 10,
-                    hasData: data.length > 0,
-                    // Datos calculados del historial
-                    totalManualLiters: sumaLitrosPeriodo,
-                    numManualRecords: conteoRegistros
-                };
-            });
-        },
+        return {
+            id: device.id,
+            name: device.name,
+            plate: device.licensePlate || "N/A",
+            currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
+            consumed: Math.round(totalSensorConsumed * 10) / 10,
+            hasData: data.length > 0,
+            totalManualLiters: sumaLitrosPeriodo,
+            numManualRecords: conteoRegistros
+        };
+    });
+}
 
         renderCards(devicesToRender) {
             const container = document.getElementById("vehicleGrid");
@@ -196,3 +191,4 @@ geotab.addin.adBlueReport = (api, state) => {
         }
     };
 };
+
