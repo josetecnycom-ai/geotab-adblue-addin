@@ -1,47 +1,110 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
+    <title>Registro AdBlue</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte AdBlue Avanzado</title>
-    <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div id="adblue-addin-container">
-        <header class="addin-header">
-            <div class="title-section">
-                <h1>Analítica de AdBlue</h1>
-                <p>Cálculo de consumo y rellenos por periodo</p>
-            </div>
-            
-            <div class="controls-row">
-                <div class="date-group">
-                    <label>Desde: <input type="datetime-local" id="dateFrom"></label>
-                    <label>Hasta: <input type="datetime-local" id="dateTo"></label>
-                </div>
+<body style="font-family: sans-serif; padding: 20px; background-color: #f4f4f4; text-align: center;">
 
-                <div class="actions">
-                    <input type="text" id="searchInput" placeholder="Buscar vehículo..." autocomplete="off">
-                    <button id="refreshBtn" class="geotab-button">Calcular</button>
-                    <button id="exportBtn" class="geotab-button excel-btn">Exportar CSV</button>
-                </div>
-            </div>
-        </header>
+    <div style="background: white; max-width: 400px; margin: 0 auto; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #004a99; margin-top: 0;">⛽ Registro AdBlue</h2>
+        
+        <div id="status-box" style="background: #e9f2ff; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #333;">
+            <div id="vehiculo-label">Detectando vehículo...</div>
+        </div>
 
-        <section class="summary-stats">
-            <div class="stat-card">
-                <span class="label">Alertas Críticas</span>
-                <span class="value" id="count-critical">0</span>
-            </div>
-            <div class="stat-card">
-                <span class="label">Consumo Promedio</span>
-                <span class="value" id="avg-consumption">0%</span>
-            </div>
-        </section>
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: bold; color: #555;">Litros cargados:</label>
+            <input type="number" id="litros-input" placeholder="0" style="width: 80%; padding: 12px; font-size: 20px; border: 2px solid #ddd; border-radius: 8px; text-align: center;">
+        </div>
 
-        <main id="vehicleGrid" class="card-grid">
-            </main>
+        <button id="btn-guardar" style="width: 100%; padding: 16px; background-color: #004a99; color: white; border: none; font-size: 18px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+            ENVIAR REGISTRO
+        </button>
+
+        <div id="debug-console" style="margin-top: 20px; font-size: 11px; color: #999; text-align: left; background: #f9f9f9; padding: 10px; border-radius: 5px; border: 1px solid #eee; min-height: 50px; overflow-wrap: break-word;">
+            Listo para enviar.
+        </div>
     </div>
-    <script src="main.js"></script>
+
+    <script>
+        geotab.addin.driveAppLink = function (api, state) {
+            return {
+                initialize: function (api, state, callback) {
+                    var consoleLog = document.getElementById('debug-console');
+                    var vehLabel = document.getElementById('vehiculo-label');
+                    var btn = document.getElementById('btn-guardar');
+                    
+                    var device = state.device || state.activeDevice;
+
+                    if (device) {
+                        vehLabel.innerHTML = "<b>Vehículo:</b> " + (device.name || device.id);
+                    }
+
+                    btn.onclick = function () {
+                        var litros = document.getElementById('litros-input').value;
+                        if (!litros || litros <= 0) { alert("Introduce litros."); return; }
+                        if (!device) { alert("No hay vehículo."); return; }
+
+                        btn.disabled = true;
+                        btn.innerText = "ACTUALIZANDO HISTORIAL...";
+
+                        // PASO 1: Leer historial previo
+                        api.call("Get", {
+                            typeName: "Device",
+                            search: { id: device.id }
+                        }, function (result) {
+                            var deviceFull = result[0];
+                            var historialPrevio = deviceFull.comment || "";
+                            
+                            // PASO 2: Añadir nuevo dato
+                            var fecha = new Date().toLocaleString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+                            var nuevaEntrada = "[" + fecha + " -> " + litros + "L]";
+                            
+                            // Unimos y recortamos a 1000 caracteres para no saturar
+                            var historialActualizado = (nuevaEntrada + " | " + historialPrevio).substring(0, 1000);
+
+                            // PASO 3: Guardar
+                            api.call("Set", {
+                                typeName: "Device",
+                                entity: {
+                                    id: device.id,
+                                    comment: historialActualizado
+                                }
+                            }, function () {
+                                consoleLog.innerText = "✅ Guardado: " + nuevaEntrada;
+                                alert("¡Repostaje guardado!");
+                                document.getElementById('litros-input').value = "";
+                                btn.innerText = "ENVIAR REGISTRO";
+                                btn.disabled = false;
+                            }, function (err) {
+                                alert("Error al guardar: " + err.message);
+                                btn.disabled = false;
+                            });
+
+                        }, function (err) {
+                            console.error(err);
+                            // Fallback por si el conductor no tiene permisos de lectura (Get)
+                            // Intentamos guardar solo el dato nuevo sin historial
+                            if(confirm("No pudimos leer el historial (permisos). ¿Quieres sobrescribir el último dato?")) {
+                                var fecha = new Date().toLocaleString('es-ES');
+                                api.call("Set", {
+                                    typeName: "Device",
+                                    entity: { id: device.id, comment: "[" + fecha + " -> " + litros + "L] (Sobrescrito)" }
+                                }, function(){ alert("Guardado."); btn.disabled=false; });
+                            } else {
+                                btn.disabled = false;
+                            }
+                        });
+                    };
+
+                    callback();
+                },
+                focus: function () {},
+                blur: function () {}
+            };
+        };
+    </script>
 </body>
 </html>
