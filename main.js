@@ -51,64 +51,81 @@ geotab.addin.adBlueReport = (api, state) => {
         },
 
         processData() {
-    const fromLimit = new Date(document.getElementById("dateFrom").value);
-    const toLimit = new Date(document.getElementById("dateTo").value);
+            // Convertimos los límites del input a objetos Date para comparar
+            const fromLimit = new Date(document.getElementById("dateFrom").value);
+            const toLimit = new Date(document.getElementById("dateTo").value);
 
-    calculatedResults = allDevices.map(device => {
-        // 1. Lógica de Sensores (se mantiene igual)
-        const data = allStatusData
-            .filter(d => d.device.id === device.id)
-            .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+            calculatedResults = allDevices.map(device => {
+                // 1. Lógica de Sensores
+                const data = allStatusData
+                    .filter(d => d.device.id === device.id)
+                    .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
 
-        let totalSensorConsumed = 0;
-        let lastLevel = null;
-        data.forEach(p => {
-            if (lastLevel !== null) {
-                const diff = lastLevel - p.data;
-                if (diff > 0) totalSensorConsumed += diff;
-            }
-            lastLevel = p.data;
-        });
+                let totalSensorConsumed = 0;
+                let lastLevel = null;
+                data.forEach(p => {
+                    if (lastLevel !== null) {
+                        const diff = lastLevel - p.data;
+                        if (diff > 0) totalSensorConsumed += diff;
+                    }
+                    lastLevel = p.data;
+                });
 
-        // 2. LÓGICA DE SUMATORIA CORREGIDA
-        let sumaLitrosPeriodo = 0;
-        let conteoRegistros = 0;
+                // 2. LÓGICA DE SUMATORIA MANUAL (CORREGIDA)
+                let sumaLitrosPeriodo = 0;
+                let conteoRegistros = 0;
 
-        if (device.comment) {
-            // Regex mejorada: busca el patrón [DD/MM, HH:mm -> XX L]
-            // Ignora los separadores "|" y espacios extra
-            const regexGlobal = /\[(\d{1,2})\/(\d{1,2}),?\s*\d{1,2}:\d{1,2}\s*->\s*(\d+)\s*L\]/g;
-            let match;
+                if (device.comment) {
+                    /**
+                     * EXPLICACIÓN REGEX:
+                     * \[         -> Busca el corchete de apertura
+                     * (\d{1,2})  -> Grupo 1: Día
+                     * \/         -> La barra inclinada
+                     * (\d{1,2})  -> Grupo 2: Mes
+                     * [^->]* -> Ignora cualquier cosa (coma, hora) hasta llegar a...
+                     * ->         -> La flecha
+                     * \s* -> Espacios opcionales
+                     * (\d+)      -> Grupo 3: Litros (los números)
+                     * \s*L       -> Espacio opcional y la letra L
+                     * \]         -> Corchete de cierre
+                     */
+                    const regexGlobal = /\[(\d{1,2})\/(\d{1,2})[^->]*->\s*(\d+)\s*L\]/g;
+                    let match;
 
-            while ((match = regexGlobal.exec(device.comment)) !== null) {
-                const dia = parseInt(match[1]);
-                const mes = parseInt(match[2]) - 1; // Enero es 0
-                const litros = parseInt(match[3]);
+                    while ((match = regexGlobal.exec(device.comment)) !== null) {
+                        const dia = parseInt(match[1]);
+                        const mes = parseInt(match[2]) - 1; // Enero es 0
+                        const litros = parseInt(match[3]);
 
-                // Creamos fecha del registro usando el año del filtro "Hasta" 
-                // para evitar errores de cambio de año
-                const fechaRegistro = new Date(toLimit.getFullYear(), mes, dia);
+                        // Creamos la fecha del registro usando el año del filtro "Hasta"
+                        const fechaRegistro = new Date(toLimit.getFullYear(), mes, dia);
+                        
+                        // Si el mes del registro es mayor al mes del filtro "Hasta", 
+                        // probablemente el registro es del año pasado (ej: registro en Dic, filtro en Ene)
+                        if (fechaRegistro > toLimit) {
+                            fechaRegistro.setFullYear(fechaRegistro.getFullYear() - 1);
+                        }
 
-                // Si la fecha del registro es válida y entra en el rango
-                if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
-                    sumaLitrosPeriodo += litros;
-                    conteoRegistros++;
+                        // Comparación estricta de tiempo (setHours 0,0,0,0 para comparar solo días si es necesario)
+                        if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
+                            sumaLitrosPeriodo += litros;
+                            conteoRegistros++;
+                        }
+                    }
                 }
-            }
-        }
 
-        return {
-            id: device.id,
-            name: device.name,
-            plate: device.licensePlate || "N/A",
-            currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
-            consumed: Math.round(totalSensorConsumed * 10) / 10,
-            hasData: data.length > 0,
-            totalManualLiters: sumaLitrosPeriodo,
-            numManualRecords: conteoRegistros
-        };
-    });
-}
+                return {
+                    id: device.id,
+                    name: device.name,
+                    plate: device.licensePlate || "N/A",
+                    currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
+                    consumed: Math.round(totalSensorConsumed * 10) / 10,
+                    hasData: data.length > 0,
+                    totalManualLiters: sumaLitrosPeriodo,
+                    numManualRecords: conteoRegistros
+                };
+            });
+        },
 
         renderCards(devicesToRender) {
             const container = document.getElementById("vehicleGrid");
@@ -142,19 +159,19 @@ geotab.addin.adBlueReport = (api, state) => {
                         </div>
                     </div>
 
-                    <div class="manual-refill-box" style="border-left-color: ${res.totalManualLiters > 0 ? '#27ae60' : '#ccc'}">
+                    <div class="manual-refill-box" style="border-left: 4px solid ${res.totalManualLiters > 0 ? '#27ae60' : '#ccc'}; background: #f9f9f9; padding: 8px; margin: 10px 0; border-radius: 4px;">
                         <div style="font-size: 0.75em; color: #333; font-weight:bold; margin-bottom:2px;">
                             📋 Rellenos en este periodo
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:end;">
-                            <span style="font-size: 1.3em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} Litros</span>
-                            <span style="font-size: 0.7em; color: #666;">${res.numManualRecords} reportes</span>
+                            <span style="font-size: 1.3em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} L</span>
+                            <span style="font-size: 0.7em; color: #666;">${res.numManualRecords} envíos</span>
                         </div>
                     </div>
 
-                    <div class="consumption-box">
-                        <small>Consumo Sensor (Estimado %):</small>
-                        <div style="font-size:1.2em; font-weight:bold; color:#2440b2;">
+                    <div class="consumption-box" style="background:#f0f7ff; padding:8px; border-radius:4px; border: 1px dashed #2440b2;">
+                        <small>Consumo Sensor (%):</small>
+                        <div style="font-size:1.1em; font-weight:bold; color:#2440b2;">
                             ${res.hasData ? res.consumed + '%' : 'Sin datos'}
                         </div>
                     </div>
@@ -191,4 +208,3 @@ geotab.addin.adBlueReport = (api, state) => {
         }
     };
 };
-
