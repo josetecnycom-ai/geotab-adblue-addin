@@ -3,6 +3,7 @@ geotab.addin.adBlueReport = (api, state) => {
     let allDevices = [];
     let allStatusData = [];
     let calculatedResults = []; 
+    let myChart = null; // Variable para controlar la instancia del gráfico
 
     return {
         initialize(api, state, callback) {
@@ -23,7 +24,7 @@ geotab.addin.adBlueReport = (api, state) => {
 
         async updateReport(api) {
             const container = document.getElementById("vehicleGrid");
-            container.innerHTML = '<div class="loading-shimmer">Calculando consumos y sumando registros históricos...</div>';
+            container.innerHTML = '<div class="loading-shimmer">Procesando datos...</div>';
 
             const fromDate = document.getElementById("dateFrom").value;
             const toDate = document.getElementById("dateTo").value;
@@ -45,18 +46,17 @@ geotab.addin.adBlueReport = (api, state) => {
                 allStatusData = results[1];
                 this.processData();
                 this.renderCards(allDevices);
+                this.updateChart(); // Llamada al gráfico
             } catch (error) {
                 container.innerHTML = `<p style="color:red">Error API: ${error.message}</p>`;
             }
         },
 
         processData() {
-            // Convertimos los límites del input a objetos Date para comparar
             const fromLimit = new Date(document.getElementById("dateFrom").value);
             const toLimit = new Date(document.getElementById("dateTo").value);
 
             calculatedResults = allDevices.map(device => {
-                // 1. Lógica de Sensores
                 const data = allStatusData
                     .filter(d => d.device.id === device.id)
                     .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
@@ -71,42 +71,18 @@ geotab.addin.adBlueReport = (api, state) => {
                     lastLevel = p.data;
                 });
 
-                // 2. LÓGICA DE SUMATORIA MANUAL (CORREGIDA)
                 let sumaLitrosPeriodo = 0;
                 let conteoRegistros = 0;
-
                 if (device.comment) {
-                    /**
-                     * EXPLICACIÓN REGEX:
-                     * \[         -> Busca el corchete de apertura
-                     * (\d{1,2})  -> Grupo 1: Día
-                     * \/         -> La barra inclinada
-                     * (\d{1,2})  -> Grupo 2: Mes
-                     * [^->]* -> Ignora cualquier cosa (coma, hora) hasta llegar a...
-                     * ->         -> La flecha
-                     * \s* -> Espacios opcionales
-                     * (\d+)      -> Grupo 3: Litros (los números)
-                     * \s*L       -> Espacio opcional y la letra L
-                     * \]         -> Corchete de cierre
-                     */
                     const regexGlobal = /\[(\d{1,2})\/(\d{1,2})[^->]*->\s*(\d+)\s*L\]/g;
                     let match;
-
                     while ((match = regexGlobal.exec(device.comment)) !== null) {
                         const dia = parseInt(match[1]);
-                        const mes = parseInt(match[2]) - 1; // Enero es 0
+                        const mes = parseInt(match[2]) - 1;
                         const litros = parseInt(match[3]);
-
-                        // Creamos la fecha del registro usando el año del filtro "Hasta"
                         const fechaRegistro = new Date(toLimit.getFullYear(), mes, dia);
-                        
-                        // Si el mes del registro es mayor al mes del filtro "Hasta", 
-                        // probablemente el registro es del año pasado (ej: registro en Dic, filtro en Ene)
-                        if (fechaRegistro > toLimit) {
-                            fechaRegistro.setFullYear(fechaRegistro.getFullYear() - 1);
-                        }
+                        if (fechaRegistro > toLimit) fechaRegistro.setFullYear(fechaRegistro.getFullYear() - 1);
 
-                        // Comparación estricta de tiempo (setHours 0,0,0,0 para comparar solo días si es necesario)
                         if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
                             sumaLitrosPeriodo += litros;
                             conteoRegistros++;
@@ -120,10 +96,61 @@ geotab.addin.adBlueReport = (api, state) => {
                     plate: device.licensePlate || "N/A",
                     currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
                     consumed: Math.round(totalSensorConsumed * 10) / 10,
-                    hasData: data.length > 0,
                     totalManualLiters: sumaLitrosPeriodo,
                     numManualRecords: conteoRegistros
                 };
+            });
+        },
+
+        updateChart() {
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            
+            // Si el gráfico ya existe, lo destruimos para recargarlo
+            if (myChart) myChart.destroy();
+
+            // Filtramos solo los vehículos que tienen algún dato para no saturar el gráfico
+            const chartData = calculatedResults.filter(r => r.consumed > 0 || r.totalManualLiters > 0).slice(0, 15);
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.map(r => r.name),
+                    datasets: [
+                        {
+                            label: 'Consumo Sensor (%)',
+                            data: chartData.map(r => r.consumed),
+                            backgroundColor: 'rgba(36, 64, 178, 0.6)',
+                            borderColor: 'rgba(36, 64, 178, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Litros Manuales (L)',
+                            data: chartData.map(r => r.totalManualLiters),
+                            backgroundColor: 'rgba(39, 174, 96, 0.6)',
+                            borderColor: 'rgba(39, 174, 96, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            type: 'linear', 
+                            position: 'left',
+                            title: { display: true, text: 'Sensor %' }
+                        },
+                        y1: { 
+                            type: 'linear', 
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            title: { display: true, text: 'Litros (L)' }
+                        }
+                    }
+                }
             });
         },
 
@@ -131,55 +158,35 @@ geotab.addin.adBlueReport = (api, state) => {
             const container = document.getElementById("vehicleGrid");
             container.innerHTML = "";
             let criticals = 0;
+            let grandTotalManual = 0;
 
             devicesToRender.forEach(dev => {
                 const res = calculatedResults.find(r => r.id === dev.id);
                 if (!res) return;
 
                 if (res.currentLevel !== null && res.currentLevel < 10) criticals++;
+                grandTotalManual += res.totalManualLiters;
 
-                let status = "no-data";
-                if (res.currentLevel !== null) {
-                    status = res.currentLevel < 10 ? "critical" : (res.currentLevel < 20 ? "warning" : "ok");
-                }
+                let status = res.currentLevel !== null ? (res.currentLevel < 10 ? "critical" : (res.currentLevel < 20 ? "warning" : "ok")) : "no-data";
 
                 const card = document.createElement("div");
                 card.className = `vehicle-card ${status}`;
-                
                 card.innerHTML = `
-                    <div style="display:flex; justify-content:space-between">
-                        <strong>${res.name}</strong>
+                    <strong>${res.name}</strong>
+                    <p style="font-size:0.8em; color:#666; margin:4px 0;">${res.plate}</p>
+                    <div class="manual-refill-box">
+                        <span style="font-size: 1.1em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} L</span>
+                        <small style="display:block; color:#666">${res.numManualRecords} reportes</small>
                     </div>
-                    <p style="font-size:0.8em; color:#666; margin:5px 0;">Matrícula: ${res.plate}</p>
-                    
-                    <div style="margin:10px 0">
-                        <small>Nivel Actual: ${res.currentLevel ?? '--'}%</small>
-                        <div style="background:#eee; height:8px; border-radius:4px">
-                            <div style="width:${res.currentLevel || 0}%; background:${this.getBarColor(res.currentLevel)}; height:100%; border-radius:4px"></div>
-                        </div>
-                    </div>
-
-                    <div class="manual-refill-box" style="border-left: 4px solid ${res.totalManualLiters > 0 ? '#27ae60' : '#ccc'}; background: #f9f9f9; padding: 8px; margin: 10px 0; border-radius: 4px;">
-                        <div style="font-size: 0.75em; color: #333; font-weight:bold; margin-bottom:2px;">
-                            📋 Rellenos en este periodo
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:end;">
-                            <span style="font-size: 1.3em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} L</span>
-                            <span style="font-size: 0.7em; color: #666;">${res.numManualRecords} envíos</span>
-                        </div>
-                    </div>
-
-                    <div class="consumption-box" style="background:#f0f7ff; padding:8px; border-radius:4px; border: 1px dashed #2440b2;">
-                        <small>Consumo Sensor (%):</small>
-                        <div style="font-size:1.1em; font-weight:bold; color:#2440b2;">
-                            ${res.hasData ? res.consumed + '%' : 'Sin datos'}
-                        </div>
+                    <div class="consumption-box">
+                        <small>Sensor: ${res.consumed}%</small>
                     </div>
                 `;
                 container.appendChild(card);
             });
 
             document.getElementById("count-critical").innerText = criticals;
+            document.getElementById("total-manual-liters").innerText = grandTotalManual + " L";
         },
 
         getBarColor(lvl) {
@@ -195,13 +202,13 @@ geotab.addin.adBlueReport = (api, state) => {
         },
 
         downloadCSV() {
-            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Nivel %,Consumo %,Total Litros Manual (Periodo),Num Reportes\n";
+            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Consumo Sensor %,Total Litros Manual,Reportes\n";
             calculatedResults.forEach(r => {
-                csv += `"${r.name}","${r.plate}","${r.currentLevel ?? ''}","${r.consumed}","${r.totalManualLiters}","${r.numManualRecords}"\n`;
+                csv += `"${r.name}","${r.plate}","${r.consumed}","${r.totalManualLiters}","${r.numManualRecords}"\n`;
             });
             const link = document.createElement("a");
             link.setAttribute("href", encodeURI(csv));
-            link.setAttribute("download", `AdBlue_Detalle.csv`);
+            link.setAttribute("download", `Reporte_AdBlue.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
