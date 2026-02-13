@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reporte AdBlue Avanzado</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div id="adblue-addin-container">
@@ -28,19 +29,22 @@
             </div>
         </header>
 
+        <section class="chart-section">
+            <canvas id="comparisonChart"></canvas>
+        </section>
+
         <section class="summary-stats">
             <div class="stat-card">
                 <span class="label">Alertas Críticas</span>
                 <span class="value" id="count-critical">0</span>
             </div>
             <div class="stat-card">
-                <span class="label">Consumo Promedio</span>
-                <span class="value" id="avg-consumption">0%</span>
+                <span class="label">Total Litros Manuales</span>
+                <span class="value" id="total-manual-liters">0 L</span>
             </div>
         </section>
 
-        <main id="vehicleGrid" class="card-grid">
-            </main>
+        <main id="vehicleGrid" class="card-grid"></main>
     </div>
     <script src="main.js"></script>
 </body>
