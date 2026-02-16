@@ -1,9 +1,12 @@
 geotab.addin.adBlueReport = (api, state) => {
     const DIAGNOSTIC_ADBLUE_ID = "DiagnosticDieselExhaustFluidId";
+    const DIAGNOSTIC_ODOMETER_ID = "DiagnosticOdometerAdjustmentId"; // ID del Odómetro
+
     let allDevices = [];
     let allStatusData = [];
+    let allOdometerData = []; // Nueva variable para guardar odómetros
     let calculatedResults = []; 
-    let myChart = null; // Variable para controlar la instancia del gráfico
+    let myChart = null;
 
     return {
         initialize(api, state, callback) {
@@ -15,7 +18,7 @@ geotab.addin.adBlueReport = (api, state) => {
             document.getElementById("dateFrom").value = lastMonth.toISOString().slice(0, 16);
 
             document.getElementById("refreshBtn").addEventListener("click", () => this.updateReport(api));
-            document.getElementById("exportBtn").addEventListener("click", () => this.downloadCSV());
+            document.getElementById("exportBtn").addEventListener("click", () => this.downloadRefillLogCSV()); // Cambiamos la función del botón
             document.getElementById("searchInput").addEventListener("input", (e) => this.filterAndRender(e.target.value.toLowerCase()));
 
             this.updateReport(api);
@@ -24,12 +27,13 @@ geotab.addin.adBlueReport = (api, state) => {
 
         async updateReport(api) {
             const container = document.getElementById("vehicleGrid");
-            container.innerHTML = '<div class="loading-shimmer">Procesando datos...</div>';
+            container.innerHTML = '<div class="loading-shimmer">Obteniendo niveles, lecturas de odómetro y repostajes...</div>';
 
             const fromDate = document.getElementById("dateFrom").value;
             const toDate = document.getElementById("dateTo").value;
 
             try {
+                // Ahora hacemos 3 llamadas: Vehículos, AdBlue y Odómetro
                 const results = await api.multiCall([
                     ["Get", { typeName: "Device" }],
                     ["Get", { 
@@ -39,16 +43,27 @@ geotab.addin.adBlueReport = (api, state) => {
                             fromDate: fromDate,
                             toDate: toDate
                         } 
+                    }],
+                    ["Get", { 
+                        typeName: "StatusData", 
+                        search: { 
+                            diagnosticSearch: { id: DIAGNOSTIC_ODOMETER_ID },
+                            fromDate: fromDate,
+                            toDate: toDate
+                        } 
                     }]
                 ]);
 
                 allDevices = results[0];
-                allStatusData = results[1];
+                allStatusData = results[1]; // Datos AdBlue
+                allOdometerData = results[2]; // Datos Odómetro (en metros)
+                
                 this.processData();
                 this.renderCards(allDevices);
-                this.updateChart(); // Llamada al gráfico
+                this.updateChart();
             } catch (error) {
                 container.innerHTML = `<p style="color:red">Error API: ${error.message}</p>`;
+                console.error(error);
             }
         },
 
@@ -57,13 +72,19 @@ geotab.addin.adBlueReport = (api, state) => {
             const toLimit = new Date(document.getElementById("dateTo").value);
 
             calculatedResults = allDevices.map(device => {
-                const data = allStatusData
+                // 1. Datos Sensor AdBlue
+                const adBlueData = allStatusData
+                    .filter(d => d.device.id === device.id)
+                    .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+
+                // 2. Datos Odómetro del vehículo
+                const odoData = allOdometerData
                     .filter(d => d.device.id === device.id)
                     .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
 
                 let totalSensorConsumed = 0;
                 let lastLevel = null;
-                data.forEach(p => {
+                adBlueData.forEach(p => {
                     if (lastLevel !== null) {
                         const diff = lastLevel - p.data;
                         if (diff > 0) totalSensorConsumed += diff;
@@ -71,21 +92,44 @@ geotab.addin.adBlueReport = (api, state) => {
                     lastLevel = p.data;
                 });
 
+                // 3. Procesar Repostajes Manuales y buscar Odómetro
                 let sumaLitrosPeriodo = 0;
-                let conteoRegistros = 0;
+                let refillDetails = []; // Aquí guardaremos cada repostaje individual con su KM
+
                 if (device.comment) {
                     const regexGlobal = /\[(\d{1,2})\/(\d{1,2})[^->]*->\s*(\d+)\s*L\]/g;
                     let match;
+
                     while ((match = regexGlobal.exec(device.comment)) !== null) {
                         const dia = parseInt(match[1]);
                         const mes = parseInt(match[2]) - 1;
                         const litros = parseInt(match[3]);
+                        
+                        // Determinar fecha del repostaje
                         const fechaRegistro = new Date(toLimit.getFullYear(), mes, dia);
                         if (fechaRegistro > toLimit) fechaRegistro.setFullYear(fechaRegistro.getFullYear() - 1);
 
                         if (fechaRegistro >= fromLimit && fechaRegistro <= toLimit) {
                             sumaLitrosPeriodo += litros;
-                            conteoRegistros++;
+
+                            // --- BÚSQUEDA DEL ODÓMETRO ---
+                            // Buscamos el registro de odómetro más cercano a la fecha del repostaje
+                            let odometerAtRefill = "N/A";
+                            if (odoData.length > 0) {
+                                // Encontramos el registro con la menor diferencia de tiempo
+                                const closest = odoData.reduce((prev, curr) => {
+                                    return (Math.abs(new Date(curr.dateTime) - fechaRegistro) < Math.abs(new Date(prev.dateTime) - fechaRegistro) ? curr : prev);
+                                });
+                                // Convertimos de metros a KM
+                                odometerAtRefill = Math.round(closest.data / 1000); 
+                            }
+
+                            // Guardamos el detalle para el CSV
+                            refillDetails.push({
+                                date: fechaRegistro.toLocaleString(),
+                                liters: litros,
+                                odometer: odometerAtRefill
+                            });
                         }
                     }
                 }
@@ -94,21 +138,19 @@ geotab.addin.adBlueReport = (api, state) => {
                     id: device.id,
                     name: device.name,
                     plate: device.licensePlate || "N/A",
-                    currentLevel: data.length ? Math.round(data[data.length - 1].data) : null,
+                    currentLevel: adBlueData.length ? Math.round(adBlueData[adBlueData.length - 1].data) : null,
                     consumed: Math.round(totalSensorConsumed * 10) / 10,
                     totalManualLiters: sumaLitrosPeriodo,
-                    numManualRecords: conteoRegistros
+                    numManualRecords: refillDetails.length,
+                    refillList: refillDetails // Lista completa para exportar
                 };
             });
         },
 
         updateChart() {
             const ctx = document.getElementById('comparisonChart').getContext('2d');
-            
-            // Si el gráfico ya existe, lo destruimos para recargarlo
             if (myChart) myChart.destroy();
 
-            // Filtramos solo los vehículos que tienen algún dato para no saturar el gráfico
             const chartData = calculatedResults.filter(r => r.consumed > 0 || r.totalManualLiters > 0).slice(0, 15);
 
             myChart = new Chart(ctx, {
@@ -120,16 +162,12 @@ geotab.addin.adBlueReport = (api, state) => {
                             label: 'Consumo Sensor (%)',
                             data: chartData.map(r => r.consumed),
                             backgroundColor: 'rgba(36, 64, 178, 0.6)',
-                            borderColor: 'rgba(36, 64, 178, 1)',
-                            borderWidth: 1,
                             yAxisID: 'y'
                         },
                         {
                             label: 'Litros Manuales (L)',
                             data: chartData.map(r => r.totalManualLiters),
                             backgroundColor: 'rgba(39, 174, 96, 0.6)',
-                            borderColor: 'rgba(39, 174, 96, 1)',
-                            borderWidth: 1,
                             yAxisID: 'y1'
                         }
                     ]
@@ -138,17 +176,8 @@ geotab.addin.adBlueReport = (api, state) => {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: { 
-                            type: 'linear', 
-                            position: 'left',
-                            title: { display: true, text: 'Sensor %' }
-                        },
-                        y1: { 
-                            type: 'linear', 
-                            position: 'right',
-                            grid: { drawOnChartArea: false },
-                            title: { display: true, text: 'Litros (L)' }
-                        }
+                        y: { type: 'linear', position: 'left' },
+                        y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false } }
                     }
                 }
             });
@@ -169,16 +198,29 @@ geotab.addin.adBlueReport = (api, state) => {
 
                 let status = res.currentLevel !== null ? (res.currentLevel < 10 ? "critical" : (res.currentLevel < 20 ? "warning" : "ok")) : "no-data";
 
+                // Obtenemos el último odómetro registrado si existe
+                const lastOdo = res.refillList.length > 0 ? res.refillList[res.refillList.length - 1].odometer : "--";
+
                 const card = document.createElement("div");
                 card.className = `vehicle-card ${status}`;
                 card.innerHTML = `
                     <strong>${res.name}</strong>
                     <p style="font-size:0.8em; color:#666; margin:4px 0;">${res.plate}</p>
-                    <div class="manual-refill-box">
-                        <span style="font-size: 1.1em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} L</span>
-                        <small style="display:block; color:#666">${res.numManualRecords} reportes</small>
+                    
+                    <div class="manual-refill-box" style="border-left: 4px solid ${res.totalManualLiters > 0 ? '#27ae60' : '#ccc'}; background: #f9f9f9; padding: 8px; margin: 10px 0; border-radius: 4px;">
+                        <div style="display:flex; justify-content:space-between; align-items:end;">
+                            <div>
+                                <span style="font-size: 1.2em; font-weight:bold; color: #2e7d32;">${res.totalManualLiters} L</span>
+                                <small style="display:block; color:#666; font-size:0.75em;">en ${res.numManualRecords} cargas</small>
+                            </div>
+                            <div style="text-align:right">
+                                <small style="color:#666; font-size:0.7em;">Último Km reg:</small>
+                                <div style="font-weight:bold; color:#333;">${lastOdo !== "N/A" ? lastOdo + ' km' : '--'}</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="consumption-box">
+
+                    <div class="consumption-box" style="background:#f0f7ff; padding:8px; border-radius:4px; border: 1px dashed #2440b2;">
                         <small>Sensor: ${res.consumed}%</small>
                     </div>
                 `;
@@ -189,29 +231,32 @@ geotab.addin.adBlueReport = (api, state) => {
             document.getElementById("total-manual-liters").innerText = grandTotalManual + " L";
         },
 
-        getBarColor(lvl) {
-            if (lvl === null) return "#ccc";
-            if (lvl < 10) return "#e74c3c";
-            if (lvl < 20) return "#f39c12";
-            return "#27ae60";
-        },
-
-        filterAndRender(term) {
-            const filtered = allDevices.filter(d => d.name.toLowerCase().includes(term) || (d.licensePlate || "").toLowerCase().includes(term));
-            this.renderCards(filtered);
-        },
-
-        downloadCSV() {
-            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Consumo Sensor %,Total Litros Manual,Reportes\n";
-            calculatedResults.forEach(r => {
-                csv += `"${r.name}","${r.plate}","${r.consumed}","${r.totalManualLiters}","${r.numManualRecords}"\n`;
+        // --- NUEVA FUNCIÓN DE EXPORTACIÓN DETALLADA ---
+        downloadRefillLogCSV() {
+            // Cabecera optimizada para cálculo de rendimiento
+            let csv = "data:text/csv;charset=utf-8,Vehiculo,Matricula,Fecha Repostaje,Litros Repostados (L),Odometro (Km)\n";
+            
+            calculatedResults.forEach(veh => {
+                // Si el vehículo tiene repostajes, creamos una fila por cada uno
+                if (veh.refillList && veh.refillList.length > 0) {
+                    veh.refillList.forEach(refill => {
+                        csv += `"${veh.name}","${veh.plate}","${refill.date}","${refill.liters}","${refill.odometer}"\n`;
+                    });
+                } 
             });
+
             const link = document.createElement("a");
             link.setAttribute("href", encodeURI(csv));
-            link.setAttribute("download", `Reporte_AdBlue.csv`);
+            link.setAttribute("download", `Bitacora_Repostajes_AdBlue_${new Date().toISOString().slice(0,10)}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        },
+        
+        getBarColor(lvl) { /* ... mismo código de antes ... */ return lvl < 10 ? "#e74c3c" : (lvl < 20 ? "#f39c12" : "#27ae60"); },
+        filterAndRender(term) { /* ... mismo código de antes ... */ 
+            const filtered = allDevices.filter(d => d.name.toLowerCase().includes(term) || (d.licensePlate || "").toLowerCase().includes(term));
+            this.renderCards(filtered);
         }
     };
 };
