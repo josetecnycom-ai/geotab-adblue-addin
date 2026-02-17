@@ -72,7 +72,7 @@ geotab.addin.adBlueReport = (api, state) => {
             processedVehicles = [];
 
             allDevices.forEach(device => {
-                // 1. Preparar datos del sensor y odómetro
+                // 1. Preparar datos y ordenar cronológicamente
                 const adBlueData = allStatusData
                     .filter(d => d.device.id === device.id)
                     .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
@@ -91,7 +91,6 @@ geotab.addin.adBlueReport = (api, state) => {
                         const mes = parseInt(match[2]) - 1;
                         const litros = parseInt(match[3]);
                         
-                        // Asumimos hora 12:00 para la búsqueda inicial
                         let fecha = new Date(toLimit.getFullYear(), mes, dia, 12, 0);
                         if (fecha > toLimit) fecha.setFullYear(fecha.getFullYear() - 1);
 
@@ -106,46 +105,86 @@ geotab.addin.adBlueReport = (api, state) => {
                     }
                 }
 
-                // 3. Detectar Repostajes SENSOR (Saltos bruscos > 5%)
-                let sensorEvents = [];
+                // --- 3. NUEVA LÓGICA DE SENSOR AGRUPADO ---
+                let consolidatedSensorEvents = [];
+                let currentRefill = null;
+                const GROUPING_WINDOW_MS = 20 * 60 * 1000; // 20 minutos para agrupar subidas
+
                 for (let i = 1; i < adBlueData.length; i++) {
-                    const diff = adBlueData[i].data - adBlueData[i-1].data;
-                    if (diff > 5) { // Umbral de detección: 5% de subida
-                        sensorEvents.push({
-                            type: 'SENSOR',
-                            date: new Date(adBlueData[i].dateTime),
-                            percentJump: diff,
-                            startLevel: adBlueData[i-1].data,
-                            endLevel: adBlueData[i].data
-                        });
+                    const prev = adBlueData[i-1];
+                    const curr = adBlueData[i];
+                    const diff = curr.data - prev.data;
+                    const timeDiff = new Date(curr.dateTime) - new Date(prev.dateTime);
+
+                    // Solo nos interesan las subidas (repostajes)
+                    if (diff > 0) {
+                        const eventDate = new Date(curr.dateTime);
+
+                        if (currentRefill) {
+                            // Ya estamos traqueando un repostaje. ¿Esta nueva subida es parte del mismo?
+                            // Si ha pasado menos de X tiempo desde la última actualización de este evento
+                            if ((eventDate - currentRefill.lastUpdate) < GROUPING_WINDOW_MS) {
+                                // Es el mismo repostaje: actualizamos el nivel final y la hora
+                                currentRefill.endLevel = curr.data;
+                                currentRefill.percentJump = currentRefill.endLevel - currentRefill.startLevel;
+                                currentRefill.date = eventDate; // Nos quedamos con la hora de finalización
+                                currentRefill.lastUpdate = eventDate;
+                            } else {
+                                // Ha pasado mucho tiempo, cerramos el anterior y empezamos uno nuevo
+                                if (currentRefill.percentJump > 5) { // Filtro de ruido: Solo si subió > 5% total
+                                    consolidatedSensorEvents.push(currentRefill);
+                                }
+                                currentRefill = {
+                                    type: 'SENSOR',
+                                    date: eventDate,
+                                    lastUpdate: eventDate,
+                                    startLevel: prev.data,
+                                    endLevel: curr.data,
+                                    percentJump: diff
+                                };
+                            }
+                        } else {
+                            // Nuevo posible repostaje
+                            currentRefill = {
+                                type: 'SENSOR',
+                                date: eventDate,
+                                lastUpdate: eventDate,
+                                startLevel: prev.data,
+                                endLevel: curr.data,
+                                percentJump: diff
+                            };
+                        }
                     }
                 }
+                // Añadir el último si quedó pendiente
+                if (currentRefill && currentRefill.percentJump > 5) {
+                    consolidatedSensorEvents.push(currentRefill);
+                }
 
-                // 4. CRUZAR DATOS (Algoritmo de Fusión)
+                // 4. CRUZAR DATOS (Algoritmo de Fusión Mejorado)
                 let finalEvents = [];
                 
-                // A) Procesar manuales e intentar vincular con sensor
+                // A) Procesar manuales e intentar vincular con los eventos CONSOLIDADOS del sensor
                 manualEvents.forEach(mEvent => {
-                    // Buscar evento de sensor cercano (± 6 horas)
-                    const sMatch = sensorEvents.find(s => Math.abs(s.date - mEvent.date) < (6 * 3600000));
+                    // Buscamos coincidencia en una ventana amplia (± 6 horas)
+                    const sMatch = consolidatedSensorEvents.find(s => Math.abs(s.date - mEvent.date) < (6 * 3600000));
                     
-                    let tankCap = null;
                     let odometer = this.getOdometerAtDate(mEvent.date, odoData);
 
                     if (sMatch) {
-                        // ¡Coincidencia! Podemos calcular capacidad real
-                        tankCap = Math.round(mEvent.liters / (sMatch.percentJump / 100));
+                        // Coincidencia encontrada
+                        let tankCap = Math.round(mEvent.liters / (sMatch.percentJump / 100));
                         finalEvents.push({
-                            date: sMatch.date, // Preferimos la fecha exacta del sensor
-                            type: 'VERIFICADO', // Manual + Sensor
+                            date: sMatch.date, 
+                            type: 'VERIFICADO', 
                             liters: mEvent.liters,
                             percentJump: sMatch.percentJump,
                             tankCapacity: tankCap,
-                            odometer: this.getOdometerAtDate(sMatch.date, odoData) // Km exacto del sensor
+                            odometer: this.getOdometerAtDate(sMatch.date, odoData) 
                         });
-                        sMatch.matched = true; // Marcar sensor como usado
+                        sMatch.matched = true; 
                     } else {
-                        // Solo manual (sensor no reportó o estaba apagado)
+                        // Solo manual
                         finalEvents.push({
                             date: mEvent.date,
                             type: 'MANUAL_SOLO',
@@ -157,38 +196,43 @@ geotab.addin.adBlueReport = (api, state) => {
                     }
                 });
 
-                // B) Añadir eventos de sensor que NO tuvieron manual (Olvido del conductor)
-                sensorEvents.filter(s => !s.matched).forEach(sEvent => {
-                    // Estimamos litros asumiendo un tanque estándar de 80L si no sabemos
+                // B) Añadir eventos de sensor sobrantes (No reportados manualmente)
+                consolidatedSensorEvents.filter(s => !s.matched).forEach(sEvent => {
                     let estimatedLiters = Math.round((sEvent.percentJump / 100) * 80); 
                     
                     finalEvents.push({
                         date: sEvent.date,
-                        type: 'SENSOR_SOLO', // Detectado pero no reportado
-                        liters: estimatedLiters, // Estimado
+                        type: 'SENSOR_SOLO', 
+                        liters: estimatedLiters,
                         percentJump: sEvent.percentJump,
-                        tankCapacity: 80, // Asumido
+                        tankCapacity: 80, 
                         odometer: this.getOdometerAtDate(sEvent.date, odoData)
                     });
                 });
 
-                // Ordenar eventos por fecha
                 finalEvents.sort((a, b) => a.date - b.date);
 
-                // **FILTRADO:** Si no hay eventos, este vehículo NO entra en la lista
                 if (finalEvents.length > 0) {
-                    
-                    // Cálculo de totales para la tarjeta
                     const totalLiters = finalEvents.reduce((acc, curr) => acc + curr.liters, 0);
                     
+                    // Aseguramos que haya un odómetro válido aunque sea buscando hacia atrás
+                    let lastOdo = 0;
+                    if(finalEvents.length > 0) {
+                         lastOdo = finalEvents[finalEvents.length-1].odometer;
+                         // Si da 0, intentamos coger el último dato conocido del vehículo
+                         if (lastOdo === 0 && odoData.length > 0) {
+                             lastOdo = Math.round(odoData[odoData.length-1].data / 1000);
+                         }
+                    }
+
                     processedVehicles.push({
                         id: device.id,
                         name: device.name,
                         plate: device.licensePlate || "N/A",
-                        events: finalEvents, // Lista detallada para CSV
+                        events: finalEvents,
                         totalRefills: finalEvents.length,
                         totalLiters: totalLiters,
-                        lastOdometer: finalEvents[finalEvents.length-1].odometer
+                        lastOdometer: lastOdo
                     });
                 }
             });
